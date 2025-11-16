@@ -7,69 +7,45 @@ import { join } from 'path';
  */
 export async function GET() {
   try {
-    // 读取.env.local文件
-    const envPath = join(process.cwd(), '.env.local');
-    
-    try {
-      const envContent = await readFile(envPath, 'utf-8');
-      
-      // 解析QWEN_API_KEY
-      const qwenKeyMatch = envContent.match(/^QWEN_API_KEY=(.*)$/m);
-      const qwenApiKey = qwenKeyMatch && qwenKeyMatch[1] ? qwenKeyMatch[1].trim() : '';
-      
-      // 解析KIMI_API_KEY
-      const kimiKeyMatch = envContent.match(/^KIMI_API_KEY=(.*)$/m);
-      const kimiApiKey = kimiKeyMatch && kimiKeyMatch[1] ? kimiKeyMatch[1].trim() : '';
-      
-      // 解析AI_PROVIDER
-      const providerMatch = envContent.match(/^AI_PROVIDER=(.*)$/m);
-      const provider = providerMatch && providerMatch[1] ? providerMatch[1].trim() : 'qwen';
-      
-      // 解析QWEN_MODEL
-      const qwenModelMatch = envContent.match(/^QWEN_MODEL=(.*)$/m);
-      const qwenModel = qwenModelMatch && qwenModelMatch[1] ? qwenModelMatch[1].trim() : 'qwen-plus';
-      
-      // 解析KIMI_MODEL
-      const kimiModelMatch = envContent.match(/^KIMI_MODEL=(.*)$/m);
-      const kimiModel = kimiModelMatch && kimiModelMatch[1] ? kimiModelMatch[1].trim() : 'kimi-k2-0905-preview';
-      
-      // 解析BILIBILI_COOKIE
-      const cookieMatch = envContent.match(/^BILIBILI_COOKIE=(.*)$/m);
-      const bilibiliCookie = cookieMatch && cookieMatch[1] ? cookieMatch[1].trim() : '';
-      
-      return NextResponse.json({
-        success: true,
-        provider,
-        qwen: {
-          apiKey: qwenApiKey,
-          model: qwenModel,
-          hasKey: qwenApiKey !== ''
-        },
-        kimi: {
-          apiKey: kimiApiKey,
-          model: kimiModel,
-          hasKey: kimiApiKey !== ''
-        },
-        bilibiliCookie: bilibiliCookie,
-        hasCookie: bilibiliCookie !== '',
-        // 兼容旧版前端
-        hasKey: provider === 'kimi' ? kimiApiKey !== '' : qwenApiKey !== '',
-        apiKey: provider === 'kimi' ? kimiApiKey : qwenApiKey,
-        keyPreview: (provider === 'kimi' ? kimiApiKey !== '' : qwenApiKey !== '') ? '已配置' : '未配置'
-      });
-    } catch (readError) {
-      return NextResponse.json({
-        success: true,
-        provider: 'qwen',
-        qwen: { apiKey: '', model: 'qwen-plus', hasKey: false },
-        kimi: { apiKey: '', model: 'kimi-k2-0905-preview', hasKey: false },
-        bilibiliCookie: '',
-        hasCookie: false,
-        hasKey: false,
-        apiKey: '',
-        keyPreview: '未配置'
-      });
-    }
+    // 从 process.env 读取环境变量（支持本地和生产环境）
+    // 读取QWEN_API_KEY
+    const qwenApiKey = process.env.QWEN_API_KEY || '';
+
+    // 读取KIMI_API_KEY
+    const kimiApiKey = process.env.KIMI_API_KEY || '';
+
+    // 读取AI_PROVIDER
+    const provider = process.env.AI_PROVIDER || 'qwen';
+
+    // 读取QWEN_MODEL
+    const qwenModel = process.env.QWEN_MODEL || 'qwen-plus';
+
+    // 读取KIMI_MODEL
+    const kimiModel = process.env.KIMI_MODEL || 'kimi-k2-0905-preview';
+
+    // 读取BILIBILI_COOKIE
+    const bilibiliCookie = process.env.BILIBILI_COOKIE || '';
+
+    return NextResponse.json({
+      success: true,
+      provider,
+      qwen: {
+        apiKey: qwenApiKey,
+        model: qwenModel,
+        hasKey: qwenApiKey !== ''
+      },
+      kimi: {
+        apiKey: kimiApiKey,
+        model: kimiModel,
+        hasKey: kimiApiKey !== ''
+      },
+      bilibiliCookie: bilibiliCookie,
+      hasCookie: bilibiliCookie !== '',
+      // 兼容旧版前端
+      hasKey: provider === 'kimi' ? kimiApiKey !== '' : qwenApiKey !== '',
+      apiKey: provider === 'kimi' ? kimiApiKey : qwenApiKey,
+      keyPreview: (provider === 'kimi' ? kimiApiKey !== '' : qwenApiKey !== '') ? '已配置' : '未配置'
+    });
   } catch (error) {
     console.error('获取配置失败:', error);
     return NextResponse.json(
@@ -87,10 +63,34 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { apiKey, provider = 'qwen', model, bilibiliCookie } = body;
 
-    // 读取或创建.env.local文件
+    // 检查是否是生产环境（Vercel）
+    const isProduction = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+
+    if (isProduction) {
+      // 生产环境无法写入文件，提示用户手动配置
+      return NextResponse.json(
+        {
+          error: '生产环境无法保存配置，请在 Vercel 项目 Settings > Environment Variables 中手动配置环境变量',
+          details: {
+            message: '请在 Vercel 控制台中配置以下环境变量：',
+            variables: {
+              AI_PROVIDER: provider,
+              ...(provider === 'qwen'
+                ? { QWEN_API_KEY: apiKey, QWEN_MODEL: model || 'qwen-plus' }
+                : { KIMI_API_KEY: apiKey, KIMI_MODEL: model || 'kimi-k2-0905-preview' }
+              ),
+              ...(bilibiliCookie ? { BILIBILI_COOKIE: bilibiliCookie } : {})
+            }
+          }
+        },
+        { status: 400 }
+      );
+    }
+
+    // 读取或创建.env.local文件（仅在开发环境）
     const envPath = join(process.cwd(), '.env.local');
     let envContent = '';
-    
+
     try {
       envContent = await readFile(envPath, 'utf-8');
     } catch (readError) {
@@ -143,7 +143,7 @@ BILIBILI_COOKIE=
     } else {
       envContent = `AI_PROVIDER=${provider}\n${envContent}`;
     }
-    
+
     if (provider === 'qwen') {
       // 替换或添加QWEN_API_KEY
       if (envContent.includes('QWEN_API_KEY=')) {
@@ -154,7 +154,7 @@ BILIBILI_COOKIE=
       } else {
         envContent = `QWEN_API_KEY=${apiKey}\n${envContent}`;
       }
-      
+
       // 更新QWEN_MODEL（如果提供）
       if (model) {
         if (envContent.includes('QWEN_MODEL=')) {
@@ -176,7 +176,7 @@ BILIBILI_COOKIE=
       } else {
         envContent = `KIMI_API_KEY=${apiKey}\n${envContent}`;
       }
-      
+
       // 更新KIMI_MODEL（如果提供）
       if (model) {
         if (envContent.includes('KIMI_MODEL=')) {
