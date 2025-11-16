@@ -18,9 +18,13 @@ export async function POST(request: NextRequest) {
     console.log('开始提取字幕:', videoUrl);
     const { title, subtitle } = await extractSubtitle(videoUrl);
     console.log('字幕提取成功:', title);
+    console.log('提取的字幕长度:', subtitle.length);
+    console.log('字幕前100字:', subtitle.substring(0, 100));
 
     // 2. 生成AI笔记
     console.log('开始生成笔记...');
+    console.log('传给AI的标题:', title);
+    console.log('传给AI的字幕长度:', subtitle.length);
     let markdown: string;
     
     try {
