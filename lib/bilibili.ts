@@ -3,6 +3,7 @@
  */
 
 import axios from 'axios';
+import { validateSubtitles } from './subtitle-validator';
 
 // 从环境变量读取Cookie
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || '';
@@ -269,7 +270,7 @@ export async function extractSubtitle(videoUrl: string, retryCount = 0): Promise
   subtitle: string;
 }> {
   const MAX_RETRIES = 3; // 最多重试3次
-  
+
   // 1. 提取BVID
   const bvid = extractBVID(videoUrl);
   if (!bvid) {
@@ -290,103 +291,159 @@ export async function extractSubtitle(videoUrl: string, retryCount = 0): Promise
   console.log('视频标题:', title);
   console.log('BVID:', bvid, 'CID:', cid);
 
-  // 3. 获取字幕列表（每次都重新请求，不使用缓存）
+  // 3. 获取字幕列表（多API交叉验证）
   const subtitles = await getSubtitleList(bvid, cid);
-  
+
+  // 尝试获取player.so API字幕进行对比
+  let playerSoSubtitles: any[] = [];
+  try {
+    playerSoSubtitles = await fetchPlayerSoSubtitles(bvid, cid);
+    console.log('player.so API获取字幕数量:', playerSoSubtitles.length);
+  } catch (error) {
+    console.warn('⚠️ player.so API获取失败:', error instanceof Error ? error.message : '未知错误');
+  }
+
   console.log('获取到的字幕列表数量:', subtitles.length);
   subtitles.forEach((sub, idx) => {
     console.log(`  [${idx}] ${sub.lan_doc} (${sub.lan}) - URL: ${sub.subtitle_url.substring(0, 80)}...`);
     console.log(`      ID: ${(sub as any).id_str || (sub as any).id || 'N/A'}`);
   });
-  
+
   if (!subtitles || subtitles.length === 0) {
     throw new Error('该视频暂无字幕，处理功能将在未来版本支持');
   }
 
-  // 4. 优先选择中文字幕（包括AI字幕），并记录所有候选项
+  // 4. 使用增强验证器进行字幕验证和选择
+  console.log('\n========== 使用增强验证器进行字幕验证 ==========');
+  const videoInfoForValidation = {
+    title: title,
+    desc: desc,
+    cid: cid
+  };
+
+  const validationResult = await validateSubtitles(
+    subtitles,
+    videoInfoForValidation,
+    subtitles,
+    playerSoSubtitles
+  );
+
+  console.log('增强验证结果:');
+  console.log('是否有效:', validationResult.isValid);
+  console.log('置信度:', validationResult.confidence.toFixed(2));
+  console.log('问题:', validationResult.issues);
+
+  if (!validationResult.isValid && validationResult.confidence < 0.3) {
+    console.error('❌ 增强验证器检测到严重问题');
+    console.error('问题详情:', validationResult.issues);
+    console.error('建议:', validationResult.suggestions);
+
+    if (retryCount < MAX_RETRIES) {
+      console.log(`\n将在 ${(retryCount + 1) * 2} 秒后重试...（${retryCount + 1}/${MAX_RETRIES}）`);
+      await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
+      return extractSubtitle(videoUrl, retryCount + 1);
+    } else {
+      throw new Error(`增强验证失败：${validationResult.issues.join('; ')}。建议：${validationResult.suggestions.join('; ')}`);
+    }
+  }
+
+  // 5. 优先选择中文字幕（包括AI字幕），并记录所有候选项
   console.log('\n开始选择字幕...');
-  
-  // 优先级：AI字幕 > 中文CC字幕 > 其他字幕
-  const aiSubtitle = subtitles.find(sub => 
-    sub.lan === 'ai-zh' || 
-    sub.lan_doc.includes('AI') ||
-    (sub as any).ai_status !== undefined
-  );
-  
-  const zhSubtitle = subtitles.find(sub => 
-    sub.lan === 'zh-CN' || 
-    sub.lan === 'zh-Hans' ||
-    sub.lan_doc.includes('中')
-  );
-  
-  const chineseSubtitle = aiSubtitle || zhSubtitle || subtitles[0];
-  
-  console.log('选择策略:', aiSubtitle ? 'AI字幕' : (zhSubtitle ? '中文CC字幕' : '默认第一个'));
-  
+
+  // 如果有备选字幕，选择相关性最高的
+  let selectedSubtitle = subtitles[0];
+  if (validationResult.alternativeSubtitles && validationResult.alternativeSubtitles.length > 0) {
+    // 按相关性评分排序，选择评分最高的
+    const sortedSubtitles = validationResult.alternativeSubtitles.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    const bestSubtitle = sortedSubtitles[0];
+    selectedSubtitle = subtitles[bestSubtitle.index];
+    console.log(`选择最佳字幕: ${selectedSubtitle.lan_doc} (相关性: ${bestSubtitle.relevanceScore.toFixed(2)})`);
+  } else {
+    // 回退到原来的选择逻辑
+    const aiSubtitle = subtitles.find(sub =>
+      sub.lan === 'ai-zh' ||
+      sub.lan_doc.includes('AI') ||
+      (sub as any).ai_status !== undefined
+    );
+
+    const zhSubtitle = subtitles.find(sub =>
+      sub.lan === 'zh-CN' ||
+      sub.lan === 'zh-Hans' ||
+      sub.lan_doc.includes('中')
+    );
+
+    selectedSubtitle = aiSubtitle || zhSubtitle || subtitles[0];
+    console.log('选择策略:', aiSubtitle ? 'AI字幕' : (zhSubtitle ? '中文CC字幕' : '默认第一个'));
+  }
+
   console.log('选择的字幕:', {
-    lan: chineseSubtitle.lan,
-    lan_doc: chineseSubtitle.lan_doc,
-    subtitle_url: chineseSubtitle.subtitle_url,
-    id: (chineseSubtitle as any).id_str || (chineseSubtitle as any).id
+    lan: selectedSubtitle.lan,
+    lan_doc: selectedSubtitle.lan_doc,
+    subtitle_url: selectedSubtitle.subtitle_url,
+    id: (selectedSubtitle as any).id_str || (selectedSubtitle as any).id
   });
-  
+
   // 检查subtitle_url是否有效
-  if (!chineseSubtitle.subtitle_url || chineseSubtitle.subtitle_url.trim() === '') {
+  if (!selectedSubtitle.subtitle_url || selectedSubtitle.subtitle_url.trim() === '') {
     console.error('❌ 选中的字幕URL为空！');
     console.error('当前重试次数:', retryCount);
-    
+
     // 如果URL无效且还有重试机会，立即重试
     if (retryCount < MAX_RETRIES) {
       console.log(`URL无效，将在 2 秒后重试...（${retryCount + 1}/${MAX_RETRIES}）`);
       await new Promise(resolve => setTimeout(resolve, 2000));
       return extractSubtitle(videoUrl, retryCount + 1);
     }
-    
-    throw new Error(`字幕URL无效，请检查是否需要登录或视频是否有有效字幕。选中的字幕：${chineseSubtitle.lan_doc}`);
+
+    throw new Error(`字幕URL无效，请检查是否需要登录或视频是否有有效字幕。选中的字幕：${selectedSubtitle.lan_doc}`);
   }
-  
+
   // 验证URL格式是否正确
-  if (!chineseSubtitle.subtitle_url.includes('://') && !chineseSubtitle.subtitle_url.startsWith('//')) {
-    console.error('❌ 字幕URL格式异常:', chineseSubtitle.subtitle_url);
+  if (!selectedSubtitle.subtitle_url.includes('://') && !selectedSubtitle.subtitle_url.startsWith('//')) {
+    console.error('❌ 字幕URL格式异常:', selectedSubtitle.subtitle_url);
     throw new Error('字幕URL格式错误');
   }
 
-  // 5. 下载字幕
+  // 6. 下载字幕
   const subtitleText = await downloadSubtitle(
-    chineseSubtitle.subtitle_url, 
+    selectedSubtitle.subtitle_url,
     bvid,
     { count: retryCount, max: MAX_RETRIES }
   );
-  
+
   console.log('提取的字幕内容长度:', subtitleText.length);
   console.log('字幕内容前200字符:', subtitleText.substring(0, 200));
 
-  // 6. 关键：验证字幕内容与视频标题的相关性
-  console.log('\n========== 开始验证字幕内容 ==========');
-  const validationResult = validateSubtitleContent(title, desc, subtitleText, chineseSubtitle.lan_doc);
-  
-  if (!validationResult.isValid) {
-    console.warn('⚠️ 检测到字幕内容与视频不匹配！');
+  // 7. 使用原有验证器进行最终检查（作为双重验证）
+  console.log('\n========== 开始传统字幕内容验证 ==========');
+  const traditionalValidationResult = validateSubtitleContent(title, desc, subtitleText, selectedSubtitle.lan_doc);
+
+  if (!traditionalValidationResult.isValid) {
+    console.warn('⚠️ 传统验证器检测到字幕内容与视频不匹配！');
     console.warn('视频标题:', title);
-    console.warn('字幕类型:', chineseSubtitle.lan_doc);
-    console.warn('失败原因:', validationResult.reason);
-    console.warn('匹配率:', `${(validationResult.matchRate * 100).toFixed(1)}%`);
+    console.warn('字幕类型:', selectedSubtitle.lan_doc);
+    console.warn('失败原因:', traditionalValidationResult.reason);
+    console.warn('匹配率:', `${(traditionalValidationResult.matchRate * 100).toFixed(1)}%`);
     console.warn('字幕内容预览:', subtitleText.substring(0, 150));
-    
-    if (retryCount < MAX_RETRIES) {
+
+    // 如果增强验证器通过了但传统验证器失败了，我们需要谨慎处理
+    if (validationResult.isValid) {
+      console.log('💡 增强验证器通过但传统验证器失败，采用增强验证器结果');
+    } else if (retryCount < MAX_RETRIES) {
       console.log(`\n将在 ${(retryCount + 1) * 2} 秒后重试...（${retryCount + 1}/${MAX_RETRIES}）`);
-      await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000)); // 递增延迟
+      await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
       return extractSubtitle(videoUrl, retryCount + 1);
     } else {
-      console.error('\n❌ 已达到最大重试次数，但字幕内容仍然不匹配');
-      console.error('最终验证结果:', validationResult);
-      throw new Error(`字幕内容验证失败：${validationResult.reason}。视频「${title}」的字幕匹配率仅为${(validationResult.matchRate * 100).toFixed(1)}%。请稍后再试或联系开发者。`);
+      console.error('\n❌ 已达到最大重试次数，字幕验证仍然失败');
+      console.error('传统验证结果:', traditionalValidationResult);
+      throw new Error(`字幕内容验证失败：${traditionalValidationResult.reason}。视频「${title}」的字幕匹配率仅为${(traditionalValidationResult.matchRate * 100).toFixed(1)}%。请稍后再试或联系开发者。`);
     }
+  } else {
+    console.log('✅ 传统字幕内容验证通过！');
+    console.log('匹配率:', `${(traditionalValidationResult.matchRate * 100).toFixed(1)}%`);
+    console.log('匹配关键词:', traditionalValidationResult.matchedKeywords?.slice(0, 5).join(', '));
   }
 
-  console.log('✅ 字幕内容验证通过！');
-  console.log('匹配率:', `${(validationResult.matchRate * 100).toFixed(1)}%`);
-  console.log('匹配关键词:', validationResult.matchedKeywords?.slice(0, 5).join(', '));
   console.log('========================================\n');
 
   return {

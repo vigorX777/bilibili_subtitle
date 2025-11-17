@@ -17,7 +17,13 @@
       "Bash(KillShell:73b7c8:*)",
       "Bash(netstat:*)",
       "Bash(findstr:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(node -e:*)",
+      "Bash(npx:*)",
+      "Bash(node -r tsx scripts/debug-subtitle-extraction.ts:*)",
+      "Bash(npm install:*)",
+      "Bash(tee:*)",
+      "Bash(node test-debug.js)"
     ],
     "deny": [],
     "ask": []
