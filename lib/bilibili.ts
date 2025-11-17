@@ -294,15 +294,6 @@ export async function extractSubtitle(videoUrl: string, retryCount = 0): Promise
   // 3. 获取字幕列表（多API交叉验证）
   const subtitles = await getSubtitleList(bvid, cid);
 
-  // 尝试获取player.so API字幕进行对比
-  let playerSoSubtitles: any[] = [];
-  try {
-    playerSoSubtitles = await fetchPlayerSoSubtitles(bvid, cid);
-    console.log('player.so API获取字幕数量:', playerSoSubtitles.length);
-  } catch (error) {
-    console.warn('⚠️ player.so API获取失败:', error instanceof Error ? error.message : '未知错误');
-  }
-
   console.log('获取到的字幕列表数量:', subtitles.length);
   subtitles.forEach((sub, idx) => {
     console.log(`  [${idx}] ${sub.lan_doc} (${sub.lan}) - URL: ${sub.subtitle_url.substring(0, 80)}...`);
@@ -325,7 +316,7 @@ export async function extractSubtitle(videoUrl: string, retryCount = 0): Promise
     subtitles,
     videoInfoForValidation,
     subtitles,
-    playerSoSubtitles
+    []
   );
 
   console.log('增强验证结果:');
