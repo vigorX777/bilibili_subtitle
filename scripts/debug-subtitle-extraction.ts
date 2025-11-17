@@ -49,12 +49,12 @@ export async function debugSubtitleExtraction(videoUrl: string): Promise<DebugIn
       throw new Error('无法从URL中提取BV号: ' + (error as Error).message);
     }
 
-    debugInfo.bvid = bvid;
-    console.log('提取到的BV号:', bvid);
-
     if (!bvid) {
       throw new Error('无法从URL中提取BV号');
     }
+
+    debugInfo.bvid = bvid;
+    console.log('提取到的BV号:', bvid);
 
     // 步骤2：获取视频信息
     console.log('\n=== 1. 获取视频信息 ===');
