@@ -1,21 +1,9 @@
 {
-  "name": "bilibili-subtitle",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
   "outputDirectory": ".next",
-  "env": {
-    "AI_PROVIDER": "@ai_provider",
-    "QWEN_API_KEY": "@qwen_api_key",
-    "KIMI_API_KEY": "@kimi_api_key",
-    "QWEN_MODEL": "@qwen_model",
-    "KIMI_MODEL": "@kimi_model",
-    "BILIBILI_COOKIE": "@bilibili_cookie",
-    "QWEN_MAX_TOKENS": "@qwen_max_tokens",
-    "SYSTEM_PROMPT": "@system_prompt",
-    "PROMPT_TEMPLATE": "@prompt_template"
-  },
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 60
