@@ -6,7 +6,18 @@
       "Bash(python:*)",
       "Bash(npm install)",
       "Bash(taskkill:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(claude config:*)",
+      "Bash(npm run build)",
+      "Bash(npm run validate http://localhost:3000)",
+      "Bash(pkill -f \"next dev\":*)",
+      "Bash(nul:*)",
+      "Bash(next dev:*)",
+      "Bash(npx next:*)",
+      "Bash(KillShell:73b7c8:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(npm run dev:*)"
     ],
     "deny": [],
     "ask": []

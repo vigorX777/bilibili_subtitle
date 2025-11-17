@@ -25,6 +25,9 @@ export default function Home() {
   const [showCookie, setShowCookie] = useState(false);
   const [hasCookie, setHasCookie] = useState(false);
   const [showCookieModal, setShowCookieModal] = useState(false);
+  const [isProductionEnv, setIsProductionEnv] = useState(false);
+  const [prodConfigGuide, setProdConfigGuide] = useState<any>(null);
+  const [envStatus, setEnvStatus] = useState<any>(null);
 
   // 初始化时检查是否已配置API Key和Cookie
   useEffect(() => {
@@ -35,7 +38,7 @@ export default function Home() {
           if (data.provider) {
             setProvider(data.provider);
           }
-          
+
           // 加载通义千问配置
           if (data.qwen) {
             setQwenConfig({
@@ -43,7 +46,7 @@ export default function Home() {
               model: data.qwen.model || 'qwen-plus'
             });
           }
-          
+
           // 加载KIMI配置
           if (data.kimi) {
             setKimiConfig({
@@ -51,16 +54,22 @@ export default function Home() {
               model: data.kimi.model || 'kimi-k2-0905-preview'
             });
           }
-          
+
           // 加载B站Cookie配置
           if (data.bilibiliCookie) {
             setBilibiliCookie(data.bilibiliCookie || '');
             setHasCookie(data.hasCookie || false);
           }
-          
+
           // 设置当前服务商是否有Key
           const currentHasKey = data.provider === 'kimi' ? (data.kimi?.hasKey || false) : (data.qwen?.hasKey || false);
           setHasApiKey(currentHasKey);
+
+          // 设置环境状态
+          if (data.environment) {
+            setIsProductionEnv(data.environment.isProduction);
+            setEnvStatus(data.environment);
+          }
         }
       })
       .catch(err => console.error('获取配置失败:', err));
@@ -72,14 +81,14 @@ export default function Home() {
 
     try {
       const currentConfig = provider === 'kimi' ? kimiConfig : qwenConfig;
-      
+
       const response = await fetch('/api/config', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          apiKey: currentConfig.apiKey, 
+        body: JSON.stringify({
+          apiKey: currentConfig.apiKey,
           provider,
           model: currentConfig.model,
           bilibiliCookie: bilibiliCookie // 添加Cookie
@@ -92,14 +101,25 @@ export default function Home() {
         throw new Error(data.error || '配置失败');
       }
 
-      alert(data.message);
-      setHasApiKey(true);
-      if (bilibiliCookie) {
-        setHasCookie(true);
+      // 处理生产环境配置指导
+      if (data.isProduction && data.guide) {
+        setProdConfigGuide(data.guide);
+        setHasApiKey(true); // 假设用户会按照指导配置
+        if (bilibiliCookie) {
+          setHasCookie(true);
+        }
+        // 不关闭模态框，显示配置指导
+      } else {
+        // 开发环境，正常处理
+        alert(data.message);
+        setHasApiKey(true);
+        if (bilibiliCookie) {
+          setHasCookie(true);
+        }
+        setShowConfigModal(false);
+        setShowApiKey(false);
+        setShowCookie(false);
       }
-      setShowConfigModal(false);
-      setShowApiKey(false);
-      setShowCookie(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : '配置过程中出现错误');
     } finally {
@@ -236,6 +256,23 @@ export default function Home() {
               B站视频字幕提取工具
             </h1>
             <div className="flex-1 flex justify-end gap-3">
+              {/* 环境状态指示器 */}
+              {envStatus && (
+                <div className={`px-3 py-1 rounded-full text-xs font-medium border ${
+                  isProductionEnv
+                    ? envStatus.allVarsConfigured
+                      ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-700'
+                      : 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-300 dark:border-yellow-700'
+                    : 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-700'
+                }`}>
+                  <span className="inline-block w-2 h-2 rounded-full mr-1 animate-pulse"></span>
+                  {isProductionEnv ? '生产环境' : '开发环境'}
+                  {!envStatus.allVarsConfigured && isProductionEnv && (
+                    <span className="ml-1" title={`缺少配置: ${envStatus.missingVars.join(', ')}`}>⚠️</span>
+                  )}
+                </div>
+              )}
+
               <button
                 onClick={() => setShowCookieModal(true)}
                 className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition flex items-center gap-2"
@@ -368,6 +405,26 @@ export default function Home() {
                   {error.includes('字幕内容验证失败') && (
                     <p className="text-sm mt-2 text-red-600 dark:text-red-400">
                       💡 提示：这可能是B站API返回了错误的字幕，请点击“重试”按钮
+                    </p>
+                  )}
+                  {error.includes('API') && error.includes('Key') && (
+                    <p className="text-sm mt-2 text-red-600 dark:text-red-400">
+                      🔧 解决方案：请检查API Key是否正确配置，点击右上角的"配置API"按钮进行设置
+                    </p>
+                  )}
+                  {error.includes('Cookie') && (
+                    <p className="text-sm mt-2 text-red-600 dark:text-red-400">
+                      🍪 解决方案：请配置B站Cookie以访问AI字幕，点击右上角的"配置Cookie"按钮进行设置
+                    </p>
+                  )}
+                  {error.includes('网络') || error.includes('请求失败') ? (
+                    <p className="text-sm mt-2 text-red-600 dark:text-red-400">
+                      🌐 网络问题：请检查网络连接，或稍后重试
+                    </p>
+                  ) : null}
+                  {isProductionEnv && (error.includes('环境变量') || error.includes('配置')) && (
+                    <p className="text-sm mt-2 text-orange-600 dark:text-orange-400">
+                      ⚠️ 生产环境提示：请确保在Vercel控制台中正确设置了所有环境变量
                     </p>
                   )}
                   {retryCount > 0 && (
@@ -582,6 +639,64 @@ export default function Home() {
                 </button>
               </div>
             </form>
+
+            {/* 生产环境配置指导 */}
+            {isProductionEnv && prodConfigGuide && (
+              <div className="mt-6 p-6 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 rounded-xl border border-orange-200 dark:border-orange-800">
+                <div className="flex items-start gap-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-orange-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-orange-800 dark:text-orange-200 mb-3">
+                      {prodConfigGuide.title}
+                    </h3>
+                    <div className="space-y-2">
+                      {prodConfigGuide.steps.map((step: string, index: number) => (
+                        <div key={index} className="flex items-start gap-2">
+                          <span className="inline-flex items-center justify-center w-6 h-6 bg-orange-500 text-white text-sm rounded-full flex-shrink-0">
+                            {index + 1}
+                          </span>
+                          <p className={`text-sm ${step.includes('http') ? 'text-orange-700 dark:text-orange-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                            {step.startsWith('  ') ? (
+                              <code className="bg-orange-100 dark:bg-orange-900/30 px-2 py-1 rounded text-xs font-mono">
+                                {step.trim()}
+                              </code>
+                            ) : (
+                              step
+                            )}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex gap-3">
+                      <a
+                        href={prodConfigGuide.vercelUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition text-sm"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        打开 Vercel 控制台
+                      </a>
+                      <a
+                        href={prodConfigGuide.documentation}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 border border-orange-300 dark:border-orange-600 text-orange-700 dark:text-orange-300 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition text-sm"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        查看文档
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 space-y-3">
               <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">

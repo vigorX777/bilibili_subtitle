@@ -26,6 +26,19 @@ export async function GET() {
     // 读取BILIBILI_COOKIE
     const bilibiliCookie = process.env.BILIBILI_COOKIE || '';
 
+    // 检查是否是生产环境
+    const isProduction = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+
+    // 验证关键环境变量
+    const requiredEnvVars = [
+      { key: 'AI_PROVIDER', value: provider },
+      { key: 'QWEN_API_KEY', value: qwenApiKey },
+      { key: 'KIMI_API_KEY', value: kimiApiKey }
+    ];
+
+    const missingVars = requiredEnvVars.filter(item => !item.value);
+    const allVarsConfigured = missingVars.length === 0;
+
     return NextResponse.json({
       success: true,
       provider,
@@ -44,7 +57,14 @@ export async function GET() {
       // 兼容旧版前端
       hasKey: provider === 'kimi' ? kimiApiKey !== '' : qwenApiKey !== '',
       apiKey: provider === 'kimi' ? kimiApiKey : qwenApiKey,
-      keyPreview: (provider === 'kimi' ? kimiApiKey !== '' : qwenApiKey !== '') ? '已配置' : '未配置'
+      keyPreview: (provider === 'kimi' ? kimiApiKey !== '' : qwenApiKey !== '') ? '已配置' : '未配置',
+      // 新增环境状态信息
+      environment: {
+        isProduction,
+        allVarsConfigured,
+        missingVars: missingVars.map(item => item.key),
+        deploymentUrl: isProduction ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'
+      }
     });
   } catch (error) {
     console.error('获取配置失败:', error);
@@ -67,24 +87,37 @@ export async function POST(request: NextRequest) {
     const isProduction = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
     if (isProduction) {
-      // 生产环境无法写入文件，提示用户手动配置
-      return NextResponse.json(
-        {
-          error: '生产环境无法保存配置，请在 Vercel 项目 Settings > Environment Variables 中手动配置环境变量',
-          details: {
-            message: '请在 Vercel 控制台中配置以下环境变量：',
-            variables: {
-              AI_PROVIDER: provider,
-              ...(provider === 'qwen'
-                ? { QWEN_API_KEY: apiKey, QWEN_MODEL: model || 'qwen-plus' }
-                : { KIMI_API_KEY: apiKey, KIMI_MODEL: model || 'kimi-k2-0905-preview' }
-              ),
-              ...(bilibiliCookie ? { BILIBILI_COOKIE: bilibiliCookie } : {})
-            }
-          }
+      // 生产环境无法写入文件，提供友好的指导
+      const envVariables = {
+        AI_PROVIDER: provider,
+        ...(provider === 'qwen'
+          ? { QWEN_API_KEY: apiKey, QWEN_MODEL: model || 'qwen-plus' }
+          : { KIMI_API_KEY: apiKey, KIMI_MODEL: model || 'kimi-k2-0905-preview' }
+        ),
+        ...(bilibiliCookie ? { BILIBILI_COOKIE: bilibiliCookie } : {})
+      };
+
+      return NextResponse.json({
+        success: true,
+        message: '配置信息已生成，请在Vercel控制台中设置环境变量',
+        isProduction: true,
+        guide: {
+          title: '🔧 生产环境配置指南',
+          steps: [
+            '登录 Vercel 控制台',
+            '进入项目 Settings > Environment Variables',
+            '添加以下环境变量：',
+            ...Object.entries(envVariables).map(([key, value]) =>
+              `  ${key}=${value?.substring(0, 20)}${value?.length > 20 ? '...' : ''}`
+            ),
+            '保存并重新部署项目'
+          ],
+          vercelUrl: 'https://vercel.com/dashboard',
+          documentation: 'https://vercel.com/docs/concepts/projects/environment-variables'
         },
-        { status: 400 }
-      );
+        envVariables, // 用于前端显示
+        warning: '⚠️ 生产环境无法直接保存配置文件，请手动在Vercel控制台设置环境变量'
+      });
     }
 
     // 读取或创建.env.local文件（仅在开发环境）
