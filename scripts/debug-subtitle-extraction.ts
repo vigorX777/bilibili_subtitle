@@ -107,7 +107,7 @@ export async function debugSubtitleExtraction(videoUrl: string): Promise<DebugIn
 
 async function getVideoInfoDebug(bvid: string) {
   try {
-    const headers = {
+    const headers: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       'Referer': 'https://www.bilibili.com'
     };
@@ -145,7 +145,7 @@ async function getVideoInfoDebug(bvid: string) {
 
 async function fetchV2APISubtitles(bvid: string, cid: number) {
   try {
-    const headers = {
+    const headers: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       'Referer': 'https://www.bilibili.com'
     };
@@ -188,7 +188,7 @@ async function fetchV2APISubtitles(bvid: string, cid: number) {
 
 async function fetchPlayerSoSubtitles(bvid: string, cid: number) {
   try {
-    const headers = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/x-www-form-urlencoded',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Referer': 'https://www.bilibili.com'
